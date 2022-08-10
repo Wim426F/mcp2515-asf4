@@ -2,8 +2,8 @@
   MCP2515_defs.h - Library for Microchip MCP2515 CAN Controller
   
   Author: David Harding
-  Maintainer: RechargeCar Inc (http://rechargecar.com)
-  Further Modification: Collin Kidder
+  Modification: Collin Kidder		-can_common integration
+  Further Modification: Wim Boone	-Port to atmel ASF4 framework
 
   Created: 11/08/2010
   
@@ -30,8 +30,6 @@
 
 #ifndef MCP2515_defs_h
 #define MCP2515_defs_h
-
-#include "Arduino.h"
 
 // MCP2515 SPI Commands
 #define CAN_RESET       0xC0
@@ -66,7 +64,7 @@
 #define CANCTRL         0x0F
 #define BFPCTRL         0x0C
 #define TEC             0x1C
-#define REC             0x1D
+#define CONF_REC		0x1D
 #define CNF3            0x28
 #define CNF2            0x29
 #define CNF1            0x2A
@@ -198,14 +196,14 @@
 #define RXF5EID0	0x1B
 
 //RX Mask 0
-#define MASK0		0x20
+#define RXMASK0		0x20
 #define RXM0SIDH	0x20
 #define RXM0SIDL	0x21
 #define RXM0EID8	0x22
 #define RXM0EID0	0x23
 
 //RX Mask 1
-#define MASK1		0x24
+#define RXMASK1		0x24
 #define RXM1SIDH	0x24
 #define RXM1SIDL	0x25
 #define RXM1EID8	0x26

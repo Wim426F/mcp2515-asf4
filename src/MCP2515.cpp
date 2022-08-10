@@ -2,8 +2,8 @@
   MCP2515.cpp - Library for Microchip MCP2515 CAN Controller
   
   Author: David Harding
-  Maintainer: RechargeCar Inc (http://rechargecar.com)
-  Further Modification: Collin Kidder
+  Modification: Collin Kidder		-can_common integration
+  Further Modification: Wim Boone	-port to atmel ASF4 framework
   
   Created: 11/08/2010
   
@@ -28,34 +28,33 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include "Arduino.h"
-#include "SPI.h"
 #include "MCP2515.h"
 #include "MCP2515_defs.h"
 
-SPISettings canSPISettings(1000000, MSBFIRST, SPI_MODE0);
+MCP2515::MCP2515(uint8_t CS_Pin, uint8_t INT_Pin)
+{
+	numfilt_init(6); // quickfix
+	gpio_set_pin_direction(CS_Pin, GPIO_DIRECTION_OUT);
+	gpio_set_pin_level(CS_Pin,true);
+	gpio_set_pin_direction(INT_Pin,GPIO_DIRECTION_IN);
+	gpio_set_pin_pull_mode(INT_Pin,GPIO_PULL_UP);
 
-MCP2515::MCP2515(uint8_t CS_Pin, uint8_t INT_Pin) : CAN_COMMON(6) {
-  pinMode(CS_Pin, OUTPUT);
-  digitalWrite(CS_Pin,HIGH);
-  pinMode(INT_Pin,INPUT);
-  digitalWrite(INT_Pin,HIGH);
-  
-  _CS = CS_Pin;
-  _INT = INT_Pin;
-  
-  savedBaud = 0;
-  savedFreq = 0;
-  running = 0; 
-  InitBuffers();
+	_CS = CS_Pin;
+	_INT = INT_Pin;
+	
+	savedBaud = 0;
+	savedFreq = 0;
+	running = 0;
+	
+	InitBuffers();
 }
 
 //set all buffer counters to zero to reset them
 void MCP2515::InitBuffers() {
-  rx_frame_read_pos = 0;
-  rx_frame_write_pos = 0;
-  tx_frame_read_pos = 0;
-  tx_frame_write_pos = 0;
+	rx_frame_read_pos = 0;
+	rx_frame_write_pos = 0;
+	tx_frame_read_pos = 0;
+	tx_frame_write_pos = 0;
 }  
 
 /*
@@ -85,7 +84,7 @@ int MCP2515::Init(uint32_t CAN_Bus_Speed, uint8_t Freq) {
 	  if(_init(i, Freq, 1, true)) {
 		// check for bus activity
 		Write(CANINTF,0);
-		delay(500); // need the bus to be communicating within this time frame
+		delay_ms(500); // need the bus to be communicating within this time frame
 		if(Interrupt()) {
 		  // determine which interrupt flags have been set
 		  interruptFlags = Read(CANINTF);
@@ -121,7 +120,7 @@ int MCP2515::Init(uint32_t CAN_Bus_Speed, uint8_t Freq, uint8_t SJW) {
 	  if(_init(i, Freq, SJW, true)) {
 		// check for bus activity
 		Write(CANINTF,0);
-		delay(500); // need the bus to be communicating within this time frame
+		delay_ms(500); // need the bus to be communicating within this time frame
 		if(Interrupt()) {
 		  // determine which interrupt flags have been set
 		  interruptFlags = Read(CANINTF);
@@ -197,10 +196,10 @@ bool MCP2515::_init(uint32_t CAN_Bus_Speed, uint8_t Freq, uint8_t SJW, bool auto
   SerialUSB.println(BT);
 #endif
   
-  byte SPT = (0.7 * BT); // Sample point
-  byte PRSEG = (SPT - 1) / 2;
-  byte PHSEG1 = SPT - PRSEG - 1;
-  byte PHSEG2 = BT - PHSEG1 - PRSEG - 1;
+  uint8_t SPT = (0.7 * BT); // Sample point
+  uint8_t PRSEG = (SPT - 1) / 2;
+  uint8_t PHSEG1 = SPT - PRSEG - 1;
+  uint8_t PHSEG2 = BT - PHSEG1 - PRSEG - 1;
 #ifdef DEBUG_SETUP
   SerialUSB.print("PROP: ");
   SerialUSB.print(PRSEG);
@@ -225,14 +224,14 @@ bool MCP2515::_init(uint32_t CAN_Bus_Speed, uint8_t Freq, uint8_t SJW, bool auto
   uint8_t SAMPLE = 0;
   
   // Set registers
-  byte data = (((SJW-1) << 6) | BRP);
+  uint8_t data = (((SJW-1) << 6) | BRP);
   Write(CNF1, data);
   Write(CNF2, ((BTLMODE << 7) | (SAMPLE << 6) | ((PHSEG1-1) << 3) | (PRSEG-1)));
-  Write(CNF3, (B10000000 | (PHSEG2-1)));
+  Write(CNF3, (0b10000000 | (PHSEG2-1)));
   Write(TXRTSCTRL,0);
 
   Write(CNF1, data);
-  delay(1);
+  delay_ms(1);
   
   if(!autoBaud) {
     // Return to Normal mode
@@ -253,7 +252,7 @@ bool MCP2515::_init(uint32_t CAN_Bus_Speed, uint8_t Freq, uint8_t SJW, bool auto
   Write(CANINTE,255);
   
   // Test that we can read back from the MCP2515 what we wrote to it
-  byte rtn = Read(CNF1);
+  uint8_t rtn = Read(CNF1);
   if (rtn == data) return true;
   else 
   {
@@ -277,7 +276,7 @@ uint16_t MCP2515::available()
 int MCP2515::_setFilter(uint32_t id, uint32_t mask, bool extended)
 {
     uint32_t filterVal;
-    boolean isExtended;
+    bool isExtended;
 
     for (int i = 0; i < 6; i++)
     {
@@ -286,17 +285,17 @@ int MCP2515::_setFilter(uint32_t id, uint32_t mask, bool extended)
         {
             if (i < 2)
             {
-                GetRXMask(MASK0, filterVal);
+                GetRXMask(RXMASK0, filterVal);
                 if (filterVal == 0) filterVal = mask;
                 filterVal &= mask;
-                SetRXMask(MASK0, filterVal);
+                SetRXMask(RXMASK0, filterVal);
             }
             else
             {
-                GetRXMask(MASK1, filterVal);
+                GetRXMask(RXMASK1, filterVal);
                 if (filterVal == 0) filterVal = mask;
                 filterVal &= mask;
-                SetRXMask(MASK1, filterVal);
+                SetRXMask(RXMASK1, filterVal);
             }
             if (i < 3)
                 SetRXFilter(FILTER0 + (i * 4), id, extended);
@@ -316,16 +315,16 @@ int MCP2515::_setFilterSpecific(uint8_t mailbox, uint32_t id, uint32_t mask, boo
     uint32_t oldMask;
     if (mailbox < 2) //MASK0
     {
-        GetRXMask(MASK0, oldMask);
+        GetRXMask(RXMASK0, oldMask);
         oldMask &= mask;
-        SetRXMask(MASK0, oldMask);
+        SetRXMask(RXMASK0, oldMask);
         
     }
     else //MASK1
     {
-        GetRXMask(MASK1, oldMask);
+        GetRXMask(RXMASK1, oldMask);
         oldMask &= mask;
-        SetRXMask(MASK0, oldMask);
+        SetRXMask(RXMASK0, oldMask);
         
     }
     if (mailbox < 3)
@@ -382,218 +381,210 @@ uint32_t MCP2515::get_rx_buff(CAN_FRAME &msg)
 }
 
 void MCP2515::Reset() {
-  SPI.beginTransaction(canSPISettings);
-  digitalWrite(_CS,LOW);
-  SPI.transfer(CAN_RESET);
-  digitalWrite(_CS,HIGH);
-  SPI.endTransaction();
+	gpio_set_pin_level(_CS,false);
+	uint8_t command = CAN_RESET;
+	io_write(spi_0, &command, 1);
+	gpio_set_pin_level(_CS,true);
 }
 
 uint8_t MCP2515::Read(uint8_t address) {
-  SPI.beginTransaction(canSPISettings);
-  digitalWrite(_CS,LOW);
-  SPI.transfer(CAN_READ);
-  SPI.transfer(address);
-  uint8_t data = SPI.transfer(0x00);
-  digitalWrite(_CS,HIGH);
-  SPI.endTransaction();
-  return data;
+	gpio_set_pin_level(_CS, false);
+	
+	uint8_t command = CAN_READ;
+	io_write(spi_0, &command, 1);
+	io_write(spi_0, &address, 1);
+	
+	uint8_t data = 0;
+	io_read(spi_0, &data, 1);
+  
+	gpio_set_pin_level(_CS, true);
+	return data;
 }
 
 void MCP2515::Read(uint8_t address, uint8_t data[], uint8_t bytes) {
-  // allows for sequential reading of registers starting at address - see data sheet
-  uint8_t i;
-  SPI.beginTransaction(canSPISettings);
-  digitalWrite(_CS,LOW);
-  SPI.transfer(CAN_READ);
-  SPI.transfer(address);
-  for(i=0;i<bytes;i++) {
-    data[i] = SPI.transfer(0x00);
-  }
-  digitalWrite(_CS,HIGH);
-  SPI.endTransaction();
+	// allows for sequential reading of registers starting at address - see data sheet
+	gpio_set_pin_level(_CS, false);
+	
+	uint8_t command = CAN_READ;
+	io_write(spi_0, &command, 1);
+	io_write(spi_0, &address, 1);
+	io_read(spi_0, data, bytes);
+	
+	gpio_set_pin_level(_CS, true);
 }
 
 CAN_FRAME MCP2515::ReadBuffer(uint8_t buffer) {
  
-  // Reads an entire RX buffer.
-  // buffer should be either RXB0 or RXB1
-  
-  CAN_FRAME message;
-  
-  SPI.beginTransaction(canSPISettings);
-  digitalWrite(_CS,LOW);
-  SPI.transfer(CAN_READ_BUFFER | (buffer<<1));
-  uint8_t byte1 = SPI.transfer(0x00); // RXBnSIDH
-  uint8_t byte2 = SPI.transfer(0x00); // RXBnSIDL
-  uint8_t byte3 = SPI.transfer(0x00); // RXBnEID8
-  uint8_t byte4 = SPI.transfer(0x00); // RXBnEID0
-  uint8_t byte5 = SPI.transfer(0x00); // RXBnDLC
+	// Reads an entire RX buffer.
+	// buffer should be either RXB0 or RXB1
+	CAN_FRAME message;
+	
+	uint8_t command = CAN_READ_BUFFER | (buffer<<1);
 
-  message.extended = (byte2 & B00001000);
+	gpio_set_pin_level(_CS, false);
+	io_write(spi_0, &command, 1);
+	
+	uint8_t bytes[5];
+	//byte1 RXBnSIDH
+	//byte2 RXBnSIDL
+	//byte3 RXBnEID8
+	//byte4 RXBnEID0
+	//byte5 RXBnDLC
+	
+	io_read(spi_0, bytes, 5);
 
-  if(message.extended) {
-    message.id = (byte1>>3);
-    message.id = (message.id<<8) | ((byte1<<5) | ((byte2>>5)<<2) | (byte2 & B00000011));
-    message.id = (message.id<<8) | byte3;
-    message.id = (message.id<<8) | byte4;
-  } else {
-    message.id = ((byte1>>5)<<8) | ((byte1<<3) | (byte2>>5));
-  }
+	message.extended = (bytes[1] & 0b00001000);
 
-  message.rtr=(byte5 & B01000000);
-  message.length = (byte5 & B00001111);  // Number of data bytes
-  for(int i=0; i<message.length; i++) {
-    message.data.byte[i] = SPI.transfer(0x00);
-  }
-  digitalWrite(_CS,HIGH);
-  SPI.endTransaction();
+	if(message.extended) {
+		message.id = (bytes[0]>>3);
+		message.id = (message.id<<8) | ((bytes[0]<<5) | ((bytes[1]>>5)<<2) | (bytes[1] & 0b00000011));
+		message.id = (message.id<<8) | bytes[2];
+		message.id = (message.id<<8) | bytes[3];
+	} else {
+		message.id = ((bytes[0]>>5)<<8) | ((bytes[0]<<3) | (bytes[1]>>5));
+	}
 
-  return message;
+	message.rtr=(bytes[4] & 0b01000000);
+	message.length = (bytes[4] & 0b00001111);  // Number of data bytes
+	
+	io_read(spi_0, message.data.byte, message.length);
+	
+	gpio_set_pin_level(_CS, true);
+	return message;
 }
 
 void MCP2515::Write(uint8_t address, uint8_t data) {
-  SPI.beginTransaction(canSPISettings);
-  digitalWrite(_CS,LOW);
-  SPI.transfer(CAN_WRITE);
-  SPI.transfer(address);
-  SPI.transfer(data);
-  digitalWrite(_CS,HIGH);
-  SPI.endTransaction();
+	gpio_set_pin_level(_CS, false);
+	uint8_t command = CAN_WRITE;
+	io_write(spi_0, &command, 1);
+	io_write(spi_0, &address, 1);
+	io_write(spi_0, &data, 1);
+	gpio_set_pin_level(_CS, true);
 }
 
 void MCP2515::Write(uint8_t address, uint8_t data[], uint8_t bytes) {
-  // allows for sequential writing of registers starting at address - see data sheet
-  uint8_t i;
-  SPI.beginTransaction(canSPISettings);
-  digitalWrite(_CS,LOW);
-  SPI.transfer(CAN_WRITE);
-  SPI.transfer(address);
-  for(i=0;i<bytes;i++) {
-    SPI.transfer(data[i]);
-  }
-  digitalWrite(_CS,HIGH);
-  SPI.endTransaction();
+	// allows for sequential writing of registers starting at address - see data sheet
+	uint8_t i;
+	gpio_set_pin_level(_CS, false);
+	uint8_t command = CAN_WRITE;
+	io_write(spi_0, &command, 1);
+	io_write(spi_0, &address, 1);
+	io_write(spi_0, data, bytes);
+	gpio_set_pin_level(_CS, true);
 }
 
 void MCP2515::SendBuffer(uint8_t buffers) {
-  // buffers should be any combination of TXB0, TXB1, TXB2 ORed together, or TXB_ALL
-  SPI.beginTransaction(canSPISettings);
-  digitalWrite(_CS,LOW);
-  SPI.transfer(CAN_RTS | buffers);
-  digitalWrite(_CS,HIGH);
-  SPI.endTransaction();
+	// buffers should be any combination of TXB0, TXB1, TXB2 ORed together, or TXB_ALL
+	gpio_set_pin_level(_CS, false);
+	uint8_t command = CAN_RTS | buffers;
+	io_write(spi_0, &command, 1);
+	gpio_set_pin_level(_CS, true);
 }
 
 void MCP2515::LoadBuffer(uint8_t buffer, CAN_FRAME *message) {
  
-  // buffer should be one of TXB0, TXB1 or TXB2
-  if(buffer==TXB0) buffer = 0; //the values we need are 0, 2, 4 TXB1 and TXB2 are already 2 / 4
+	// buffer should be one of TXB0, TXB1 or TXB2
+	if(buffer==TXB0) buffer = 0; //the values we need are 0, 2, 4 TXB1 and TXB2 are already 2 / 4
 
-  uint8_t byte1=0; // TXBnSIDH
-  uint8_t byte2=0; // TXBnSIDL
-  uint8_t byte3=0; // TXBnEID8
-  uint8_t byte4=0; // TXBnEID0
-  uint8_t byte5=0; // TXBnDLC
+	uint8_t bytes[5];
+	// byte1 TXBnSIDH
+	// byte2 TXBnSIDL
+	// byte3 TXBnEID8
+	// byte4 TXBnEID0
+	// byte5 TXBnDLC
 
-  if(message->extended) {
-    byte1 = byte((message->id<<3)>>24); // 8 MSBits of SID
-	byte2 = byte((message->id<<11)>>24) & B11100000; // 3 LSBits of SID
-	byte2 = byte2 | byte((message->id<<14)>>30); // 2 MSBits of EID
-	byte2 = byte2 | B00001000; // EXIDE
-    byte3 = byte((message->id<<16)>>24); // EID Bits 15-8
-    byte4 = byte((message->id<<24)>>24); // EID Bits 7-0
-  } else {
-    byte1 = byte((message->id<<21)>>24); // 8 MSBits of SID
-	byte2 = byte((message->id<<29)>>24) & B11100000; // 3 LSBits of SID
-    byte3 = 0; // TXBnEID8
-    byte4 = 0; // TXBnEID0
-  }
-  byte5 = message->length;
-  if(message->rtr) {
-    byte5 = byte5 | B01000000;
-  }
+	if(message->extended) {
+		bytes[0] = uint8_t((message->id<<3)>>24); // 8 MSBits of SID
+		bytes[1] = uint8_t((message->id<<11)>>24) & 0b11100000; // 3 LSBits of SID
+		bytes[1] = bytes[1] | uint8_t((message->id<<14)>>30); // 2 MSBits of EID
+		bytes[1] = bytes[1] | 0b00001000; // EXIDE
+		bytes[2] = uint8_t((message->id<<16)>>24); // EID Bits 15-8
+		bytes[3] = uint8_t((message->id<<24)>>24); // EID Bits 7-0
+	} else {
+		bytes[0] = uint8_t((message->id<<21)>>24); // 8 MSBits of SID
+		bytes[1] = uint8_t((message->id<<29)>>24) & 0b11100000; // 3 LSBits of SID
+		bytes[2] = 0; // TXBnEID8
+		bytes[3] = 0; // TXBnEID0
+	}
+	bytes[4] = message->length;
+	if(message->rtr) {
+	bytes[4] = bytes[4] | 0b01000000;
+	}
   
-  SPI.beginTransaction(canSPISettings);
-  digitalWrite(_CS,LOW);
-  SPI.transfer(CAN_LOAD_BUFFER | buffer);  
-  SPI.transfer(byte1);
-  SPI.transfer(byte2);
-  SPI.transfer(byte3);
-  SPI.transfer(byte4);
-  SPI.transfer(byte5);
- 
-  for(int i=0;i<message->length;i++) {
-    SPI.transfer(message->data.byte[i]);
-  }
-  digitalWrite(_CS,HIGH);
-  SPI.endTransaction();
+	gpio_set_pin_level(_CS, false);
+	
+	uint8_t command = CAN_LOAD_BUFFER | buffer;
+	io_write(spi_0, &command, 1);
+	io_write(spi_0, bytes, 5);
+	io_write(spi_0, message->data.byte, message->length);
+	
+	gpio_set_pin_level(_CS, true);
 }
 
 uint8_t MCP2515::Status() {
-  SPI.beginTransaction(canSPISettings);
-  digitalWrite(_CS,LOW);
-  SPI.transfer(CAN_STATUS);
-  uint8_t data = SPI.transfer(0x00);
-  digitalWrite(_CS,HIGH);
-  SPI.endTransaction();
-  return data;
-  /*
-  bit 7 - CANINTF.TX2IF
-  bit 6 - TXB2CNTRL.TXREQ
-  bit 5 - CANINTF.TX1IF
-  bit 4 - TXB1CNTRL.TXREQ
-  bit 3 - CANINTF.TX0IF
-  bit 2 - TXB0CNTRL.TXREQ
-  bit 1 - CANINTFL.RX1IF
-  bit 0 - CANINTF.RX0IF
-  */
+	gpio_set_pin_level(_CS, false);
+	uint8_t command = CAN_STATUS;
+	io_write(spi_0, &command, 1);
+	uint8_t data;
+	io_read(spi_0, &data, 1);
+	gpio_set_pin_level(_CS, true);
+	return data;
+	/*
+	bit 7 - CANINTF.TX2IF
+	bit 6 - TXB2CNTRL.TXREQ
+	bit 5 - CANINTF.TX1IF
+	bit 4 - TXB1CNTRL.TXREQ
+	bit 3 - CANINTF.TX0IF
+	bit 2 - TXB0CNTRL.TXREQ
+	bit 1 - CANINTFL.RX1IF
+	bit 0 - CANINTF.RX0IF
+	*/
 }
 
 uint8_t MCP2515::RXStatus() {
-  SPI.beginTransaction(canSPISettings);
-  digitalWrite(_CS,LOW);
-  SPI.transfer(CAN_RX_STATUS);
-  uint8_t data = SPI.transfer(0x00);
-  digitalWrite(_CS,HIGH);
-  SPI.endTransaction();
-  return data;
-  /*
-  bit 7 - CANINTF.RX1IF
-  bit 6 - CANINTF.RX0IF
-  bit 5 - 
-  bit 4 - RXBnSIDL.EIDE
-  bit 3 - RXBnDLC.RTR
-  bit 2 | 1 | 0 | Filter Match
-  ------|---|---|-------------
-      0 | 0 | 0 | RXF0
-	  0 | 0 | 1 | RXF1
-	  0 | 1 | 0 | RXF2
-	  0 | 1 | 1 | RXF3
-	  1 | 0 | 0 | RXF4
-	  1 | 0 | 1 | RXF5
-	  1 | 1 | 0 | RXF0 (rollover to RXB1)
-	  1 | 1 | 1 | RXF1 (rollover to RXB1)
-  */
+	gpio_set_pin_level(_CS, false);
+	uint8_t command = CAN_RX_STATUS;
+	io_write(spi_0, &command, 1);
+	uint8_t data;
+	io_read(spi_0, &data, 1);
+	gpio_set_pin_level(_CS, true);
+	return data;
+	/*
+	bit 7 - CANINTF.RX1IF
+	bit 6 - CANINTF.RX0IF
+	bit 5 - 
+	bit 4 - RXBnSIDL.EIDE
+	bit 3 - RXBnDLC.RTR
+	bit 2 | 1 | 0 | Filter Match
+	------|---|---|-------------
+		0 | 0 | 0 | RXF0
+		0 | 0 | 1 | RXF1
+		0 | 1 | 0 | RXF2
+		0 | 1 | 1 | RXF3
+		1 | 0 | 0 | RXF4
+		1 | 0 | 1 | RXF5
+		1 | 1 | 0 | RXF0 (rollover to RXB1)
+		1 | 1 | 1 | RXF1 (rollover to RXB1)
+	*/
 }
 
 void MCP2515::BitModify(uint8_t address, uint8_t mask, uint8_t data) {
-  // see data sheet for explanation
-  SPI.beginTransaction(canSPISettings);
-  digitalWrite(_CS,LOW);
-  SPI.transfer(CAN_BIT_MODIFY);
-  SPI.transfer(address);
-  SPI.transfer(mask);
-  SPI.transfer(data);
-  digitalWrite(_CS,HIGH);
-  SPI.endTransaction();
+	// see data sheet for explanation
+	gpio_set_pin_level(_CS, false);
+	
+	uint8_t command = CAN_BIT_MODIFY;
+	io_write(spi_0, &command, 1);
+	io_write(spi_0, &address, 1);
+	io_write(spi_0, &mask, 1);
+	io_write(spi_0, &data, 1);
+	gpio_set_pin_level(_CS, true);
 }
 
 bool MCP2515::Interrupt() {
-  return (digitalRead(_INT)==LOW);
+	return (gpio_get_pin_level(_INT) == false);
 }
 
-bool MCP2515::Mode(byte mode) {
+bool MCP2515::Mode(uint8_t mode) {
   /*
   mode can be one of the following:
   MODE_CONFIG
@@ -602,8 +593,8 @@ bool MCP2515::Mode(byte mode) {
   MODE_SLEEP
   MODE_NORMAL
   */
-  BitModify(CANCTRL, B11100000, mode);
-  delay(10); // allow for any transmissions to complete
+  BitModify(CANCTRL, 0b11100000, mode);
+  delay_ms(10); // allow for any transmissions to complete
   uint8_t data = Read(CANSTAT); // check mode has been set
   return ((data & mode)==mode);
 }
@@ -625,8 +616,8 @@ void MCP2515::InitFilters(bool permissive) {
 		value = 0x7FF; //all 11 bits set
         value32 = 0x1FFFFFFF; //all 29 bits set
 	}
-	SetRXMask(MASK0, value32);
-	SetRXMask(MASK1, value);
+	SetRXMask(RXMASK0, value32);
+	SetRXMask(RXMASK1, value);
 	SetRXFilter(FILTER0, value32, 1);
 	SetRXFilter(FILTER1, value32, 1);
 	SetRXFilter(FILTER2, value, 0);
@@ -647,11 +638,11 @@ void MCP2515::SetRXMask(uint8_t mask, uint32_t MaskValue) {
 	oldMode = Read(CANSTAT);
 	Mode(MODE_CONFIG); //have to be in config mode to change mask
 	
-    temp_buff[0] = byte((MaskValue << 3) >> 24);
-	temp_buff[1] = byte((MaskValue << 11) >> 24) & B11100000;
-	temp_buff[1] |= byte((MaskValue << 14) >> 30);
-	temp_buff[2] = byte((MaskValue << 16)>>24);
-	temp_buff[3] = byte((MaskValue << 24)>>24);
+    temp_buff[0] = uint8_t((MaskValue << 3) >> 24);
+	temp_buff[1] = uint8_t((MaskValue << 11) >> 24) & 0b11100000;
+	temp_buff[1] |= uint8_t((MaskValue << 14) >> 30);
+	temp_buff[2] = uint8_t((MaskValue << 16)>>24);
+	temp_buff[3] = uint8_t((MaskValue << 24)>>24);
 	
 	Write(mask, temp_buff, 4); //send the four byte mask out to the proper address
 	
@@ -674,16 +665,16 @@ void MCP2515::SetRXFilter(uint8_t filter, uint32_t FilterValue, bool ext) {
 	Mode(MODE_CONFIG); //have to be in config mode to change mask
 	
 	if (ext) { //fill out all 29 bits
-		temp_buff[0] = byte((FilterValue << 3) >> 24);
-		temp_buff[1] = byte((FilterValue << 11) >> 24) & B11100000;
-		temp_buff[1] |= byte((FilterValue << 14) >> 30);
-		temp_buff[1] |= B00001000; //set EXIDE
-		temp_buff[2] = byte((FilterValue << 16)>>24);
-		temp_buff[3] = byte((FilterValue << 24)>>24);
+		temp_buff[0] = uint8_t((FilterValue << 3) >> 24);
+		temp_buff[1] = uint8_t((FilterValue << 11) >> 24) & 0b11100000;
+		temp_buff[1] |= uint8_t((FilterValue << 14) >> 30);
+		temp_buff[1] |= 0b00001000; //set EXIDE
+		temp_buff[2] = uint8_t((FilterValue << 16)>>24);
+		temp_buff[3] = uint8_t((FilterValue << 24)>>24);
 	}
 	else { //make sure to set mask as 11 bit standard mask
-		temp_buff[0] = byte((FilterValue << 21)>>24);
-		temp_buff[1] = byte((FilterValue << 29) >> 24) & B11100000;
+		temp_buff[0] = uint8_t((FilterValue << 21)>>24);
+		temp_buff[1] = uint8_t((FilterValue << 29) >> 24) & 0b11100000;
 		temp_buff[2] = 0;
 		temp_buff[3] = 0;
 	}
@@ -693,7 +684,7 @@ void MCP2515::SetRXFilter(uint8_t filter, uint32_t FilterValue, bool ext) {
 	Mode(oldMode);
 }
 
-void MCP2515::GetRXFilter(uint8_t filter, uint32_t &filterVal, boolean &isExtended)
+void MCP2515::GetRXFilter(uint8_t filter, uint32_t &filterVal, bool &isExtended)
 {
     uint8_t temp_buff[4];
 	uint8_t oldMode;
@@ -709,7 +700,7 @@ void MCP2515::GetRXFilter(uint8_t filter, uint32_t &filterVal, boolean &isExtend
     filterVal |= temp_buff[1] >> 5;
     isExtended = false;
 
-    if (temp_buff[1] & B00001000) //extended / 29 bit filter - get the remaining 18 bits we need
+    if (temp_buff[1] & 0b00001000) //extended / 29 bit filter - get the remaining 18 bits we need
     {
         isExtended = true;
         filterVal |= (temp_buff[1] & 3) << 27;

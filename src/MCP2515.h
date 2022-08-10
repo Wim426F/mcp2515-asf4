@@ -2,8 +2,8 @@
   MCP2515.h - Library for Microchip MCP2515 CAN Controller
   
   Author: David Harding
-  Maintainer: RechargeCar Inc (http://rechargecar.com)
-  Further Modification: Collin Kidder
+  Modification: Collin Kidder		-can_common integration
+  Further Modification: Wim Boone	-port to atmel ASF4 framework
   
   Created: 11/08/2010
   
@@ -31,8 +31,6 @@
 #ifndef MCP2515_h
 #define MCP2515_h
 
-#include "Arduino.h"
-#include "MCP2515_defs.h"
 #include <can_common.h>
 
 //#define DEBUG_SETUP
@@ -48,7 +46,7 @@ class MCP2515 : public CAN_COMMON
 	int Init(uint32_t baud, uint8_t freq, uint8_t sjw);
 
 
-    //block of functions which must be overriden from CAN_COMMON to implement functionality for this hardware
+    //block of functions which must be overridden from CAN_COMMON to implement functionality for this hardware
 	int _setFilterSpecific(uint8_t mailbox, uint32_t id, uint32_t mask, bool extended);
     int _setFilter(uint32_t id, uint32_t mask, bool extended);
 	uint32_t init(uint32_t ul_baudrate);
@@ -64,7 +62,7 @@ class MCP2515 : public CAN_COMMON
 	
 	// Basic MCP2515 SPI Command Set
     void Reset();
-    byte Read(uint8_t address);
+    uint8_t Read(uint8_t address);
     void Read(uint8_t address, uint8_t data[], uint8_t bytes);
 	CAN_FRAME ReadBuffer(uint8_t buffer);
 	void Write(uint8_t address, uint8_t data);
@@ -83,7 +81,7 @@ class MCP2515 : public CAN_COMMON
 	bool GetRXFrame(CAN_FRAME &frame);
 	void SetRXFilter(uint8_t filter, uint32_t FilterValue, bool ext);
 	void SetRXMask(uint8_t mask, uint32_t MaskValue);
-    void GetRXFilter(uint8_t filter, uint32_t &filterVal, boolean &isExtended);
+    void GetRXFilter(uint8_t filter, uint32_t &filterVal, bool &isExtended);
     void GetRXMask(uint8_t mask, uint32_t &filterVal);
 
 	void InitFilters(bool permissive);
